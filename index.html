@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>永齡情緒課讀本閱讀</title>
+    <title>情緒課閱讀 V13 (護眼防閃爍版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
     
@@ -14,7 +14,7 @@
         body, html {
             height: 100dvh; 
             width: 100dvw;
-            background-color: #202020;
+            background-color: #202020; /* 整體背景深色 */
             overflow: hidden; 
             touch-action: none;
             -webkit-user-select: none;
@@ -22,7 +22,6 @@
             font-family: sans-serif;
         }
 
-        /* 舞台 */
         #reader-stage {
             width: 100%;
             height: 100%;
@@ -31,7 +30,6 @@
             position: relative;
         }
 
-        /* 縮放容器 */
         #zoom-container {
             width: 100%; 
             height: 100%;
@@ -41,7 +39,6 @@
             outline: none;
         }
 
-        /* 畫布 */
         canvas {
             display: block;
             box-shadow: 0 0 40px rgba(0,0,0,0.6);
@@ -49,6 +46,10 @@
             max-height: 96dvh;
             margin: 0 auto;
             object-fit: contain;
+            
+            /* --- V13 關鍵修正：設定畫布底色 --- */
+            background-color: #202020; 
+            /* 這樣在圖片還沒跑出來之前，它就是黑的，不會閃白光 */
         }
 
         /* 翻頁按鈕 */
@@ -76,7 +77,6 @@
         #prev-btn { left: 0; padding-right: 20px; }
         #next-btn { right: 0; padding-left: 20px; }
 
-        /* 頁碼 */
         #page-loader {
             position: absolute;
             bottom: 25px; 
@@ -110,10 +110,7 @@
     <script>
         document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
 
-        // --- 這裡已修改為您的中文檔名 ---
-        // 請確保 GitHub 上的檔案名稱也一模一樣，包含副檔名 .pdf
-        var url = 'book.pdf';
-
+        var url = '永齡情緒課讀本閱讀.pdf'; // 檔名確認
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
         var pdfDoc = null,
@@ -133,52 +130,40 @@
             cursor: 'default',
         });
 
-        // 電腦版滾輪縮放
         stage.addEventListener('wheel', panzoom.zoomWithWheel);
         
-        // --- V12 核心：指尖定點縮放邏輯 ---
         let lastTap = 0;
         stage.addEventListener('touchend', function(e) {
             var currentTime = new Date().getTime();
             var tapLength = currentTime - lastTap;
             
-            // 偵測雙擊
             if (tapLength < 300 && tapLength > 0) {
                 e.preventDefault(); 
                 
-                // 1. 取得目前縮放狀態
                 var currentScale = panzoom.getScale();
 
                 if (currentScale > 1.2) {
-                    // 如果已經放大 -> 縮小回正中間 (Reset)
                     panzoom.reset({ animate: true });
                 } else {
-                    // 如果是原圖 -> 針對「點擊位置」放大
-                    
-                    // 取得手指離開時的座標 (也就是點擊點)
                     var touch = e.changedTouches[0];
                     var x = touch.clientX;
                     var y = touch.clientY;
-
-                    // 使用 panzoom 的 focal 選項，指定縮放中心點
                     panzoom.zoom(2.5, { 
                         animate: true,
-                        focal: { x: x, y: y } // 告訴程式碼：以這個座標為中心放大
+                        focal: { x: x, y: y } 
                     });
                 }
             }
             lastTap = currentTime;
         });
 
-        // 載入 PDF
         pdfjsLib.getDocument(url).promise.then(function(pdfDoc_) {
             pdfDoc = pdfDoc_;
             document.getElementById('page-count').textContent = pdfDoc.numPages;
             renderPage(pageNum);
         }).catch(function(error) {
             console.error(error);
-            // 增加一個簡單的報錯，如果檔名不對會跳出提示
-            alert('找不到檔案：' + url + '\n請確認 GitHub 上的檔名是否完全一致！');
+            alert('找不到檔案：' + url);
         });
 
         function renderPage(num) {
@@ -187,11 +172,15 @@
             pdfDoc.getPage(num).then(function(page) {
                 var viewportRaw = page.getViewport({scale: 1});
                 var devicePixel = window.devicePixelRatio || 1;
-                var outputScale = Math.max(devicePixel, 2); 
+                // 設定高解析度
                 var viewport = page.getViewport({scale: 2}); 
 
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
+                
+                // --- V13 修正 ---
+                // 在開始畫圖之前，先確保畫布背景是黑的 (透過 CSS)
+                // 這裡我們不需要做額外 JS 設定，因為 CSS 已經處理好了
                 
                 var renderContext = {
                     canvasContext: ctx,
@@ -239,7 +228,6 @@
             if(e.key === "ArrowRight") onNextPage();
         });
 
-        // 滑動翻頁邏輯
         let touchStartX = 0;
         let touchEndX = 0;
         
@@ -249,7 +237,6 @@
 
         stage.addEventListener('touchend', e => {
             touchEndX = e.changedTouches[0].screenX;
-            // 只有在縮小狀態下才允許翻頁
             if (panzoom.getScale() < 1.2) {
                 if (touchEndX < touchStartX - 60) onNextPage();
                 if (touchEndX > touchStartX + 60) onPrevPage();
