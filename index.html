@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>班級閱讀教材 (通用版)</title>
+    <title>班級閱讀教材 V9 (Mac修正版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
     
@@ -12,42 +12,45 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
         body, html {
-            /* dvh 支援 iOS Safari, 也支援現代 Chrome */
             height: 100dvh; 
             width: 100dvw;
             background-color: #202020;
             overflow: hidden; 
-            touch-action: none; /* 關鍵：停用瀏覽器預設觸控，交給 JS */
-            -webkit-user-select: none; /* 禁止選取 */
+            touch-action: none;
+            -webkit-user-select: none;
             user-select: none;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: sans-serif;
         }
 
-        /* 舞台：使用 Grid 置中 (最穩定的跨瀏覽器置中法) */
+        /* 舞台：使用 Flexbox 置中 */
         #reader-stage {
             width: 100%;
             height: 100%;
-            display: grid;
-            place-items: center; 
+            display: flex; /* 改回 Flex，對 Mac Safari 比較溫柔 */
+            justify-content: center;
+            align-items: center;
             position: relative;
         }
 
         /* 縮放容器 */
         #zoom-container {
-            width: auto;
-            height: auto;
-            /* 修正 Chrome 點擊藍框問題 */
-            outline: none; 
+            /* 關鍵：預設讓它比螢幕小一點，避免 Mac 自動填滿放大 */
+            width: 95%; 
+            height: 95%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            outline: none;
         }
 
         /* 畫布本體 */
         canvas {
             display: block;
-            box-shadow: 0 0 40px rgba(0,0,0,0.6);
-            /* 強制限制最大邊界，確保不跑版 */
-            max-width: 98dvw; 
-            max-height: 98dvh;
-            object-fit: contain;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            /* 這裡使用 CSS 強制約束，不管 JS 算多少，絕不超過容器 */
+            max-width: 100%; 
+            max-height: 100%;
+            object-fit: contain; /* 保持比例 */
         }
 
         /* 翻頁按鈕 */
@@ -56,26 +59,20 @@
             top: 50%;
             transform: translateY(-50%);
             width: 80px;
-            height: 120px;
+            height: 150px;
             display: flex;
             justify-content: center;
             align-items: center;
             cursor: pointer;
             z-index: 999;
-            color: rgba(255, 255, 255, 0.2); /* 預設更淡一點 */
+            color: rgba(255, 255, 255, 0.2);
             font-size: 50px;
-            border-radius: 10px;
             transition: all 0.2s;
-            /* 讓手機點擊不反白 */
             -webkit-tap-highlight-color: transparent; 
         }
-        /* 滑鼠移過去才變明顯 (適合電腦版) */
         .nav-btn:hover {
             background-color: rgba(255, 255, 255, 0.1);
             color: rgba(255, 255, 255, 0.8);
-        }
-        .nav-btn:active {
-            background-color: rgba(255, 255, 255, 0.2);
         }
 
         #prev-btn { left: 0; padding-right: 20px; }
@@ -88,14 +85,12 @@
             left: 50%;
             transform: translateX(-50%);
             background: rgba(30, 30, 30, 0.8);
-            color: #ddd;
+            color: #ccc;
             padding: 6px 16px;
             border-radius: 30px;
             font-size: 14px;
             z-index: 1000;
             pointer-events: none;
-            backdrop-filter: blur(4px);
-            border: 1px solid rgba(255,255,255,0.1);
         }
     </style>
 </head>
@@ -115,7 +110,6 @@
     </div>
 
     <script>
-        // 防止 Safari 雙指縮放整個網頁 (對 Chrome 無害)
         document.addEventListener('gesturestart', function (e) {
             e.preventDefault();
         });
@@ -132,19 +126,17 @@
             zoomContainer = document.getElementById('zoom-container'),
             stage = document.getElementById('reader-stage');
 
-        // Panzoom 設定
         const panzoom = Panzoom(zoomContainer, {
             maxScale: 5,
             minScale: 1,
-            startScale: 1,
+            startScale: 1, // 這裡設為 1，但我們會在 CSS 裡控制容器大小
             contain: 'outside',
             cursor: 'default'
         });
 
-        // 綁定滾輪縮放 (電腦版 Chrome 體驗很好)
         stage.addEventListener('wheel', panzoom.zoomWithWheel);
         
-        // 雙擊還原 (iPad/手機體驗)
+        // 雙擊還原
         let lastTap = 0;
         stage.addEventListener('touchend', function(e) {
             var currentTime = new Date().getTime();
@@ -156,46 +148,42 @@
             lastTap = currentTime;
         });
 
-        // 載入 PDF
         pdfjsLib.getDocument(url).promise.then(function(pdfDoc_) {
             pdfDoc = pdfDoc_;
             document.getElementById('page-count').textContent = pdfDoc.numPages;
             renderPage(pageNum);
         }).catch(function(error) {
             console.error(error);
-            alert('無法載入 PDF，請確認檔名是否為 book.pdf');
         });
 
         function renderPage(num) {
             pageRendering = true;
-            panzoom.reset(); // 換頁歸零
+            // 換頁時，不要立刻重置 Panzoom，避免畫面跳動，我們交給後面的 setTimeout
 
             pdfDoc.getPage(num).then(function(page) {
                 
-                // --- 全平台通用適配邏輯 ---
+                // --- V9 核心邏輯：CSS 主導，JS 輔助 ---
 
-                var winW = window.innerWidth;
-                var winH = window.innerHeight;
+                // 1. 取得 PDF 原始比例
                 var viewportRaw = page.getViewport({scale: 1});
                 
-                // 計算縮放：保留 20px 邊距
-                var scaleW = (winW - 20) / viewportRaw.width;
-                var scaleH = (winH - 20) / viewportRaw.height;
-                var fitScale = Math.min(scaleW, scaleH);
-
-                // 設定高解析度 (電腦版 Chrome 也可以享受高畫質)
-                // 如果是視網膜螢幕 (Retina/手機)，通常是 2 或 3
+                // 2. 計算高解析度 (Retina 優化)
                 var devicePixel = window.devicePixelRatio || 1;
-                var outputScale = Math.max(devicePixel, 2); // 至少 2 倍
+                // Mac 上通常是 2，我們設定至少要 2 倍清晰度
+                var outputScale = Math.max(devicePixel, 2); 
+                
+                // 3. 我們不需要在這裡計算 "fitScale" 了，因為我們將透過 CSS object-fit 來控制顯示
+                // 我們只需要產出一張「夠清楚的大圖」給 Canvas 即可
+                // 設定一個固定倍率，例如原始 PDF 的 2 倍大，這樣放大看才清楚
+                var viewport = page.getViewport({scale: 2}); 
 
-                var viewport = page.getViewport({scale: fitScale * outputScale});
-
+                // 4. 設定 Canvas 實體像素 (這決定了清晰度，越大越清楚)
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 
-                // 強制 CSS 顯示尺寸
-                canvas.style.width = Math.floor(viewportRaw.width * fitScale) + "px";
-                canvas.style.height = Math.floor(viewportRaw.height * fitScale) + "px";
+                // 5. 關鍵修改：不設定 canvas.style.width/height
+                // 讓 CSS 的 max-width: 100%; max-height: 100%; 去自動縮放它
+                // 這能解決 Mac 上計算誤差導致的自動放大問題
 
                 var renderContext = {
                     canvasContext: ctx,
@@ -206,8 +194,13 @@
 
                 renderTask.promise.then(function() {
                     pageRendering = false;
-                    // 二次修正置中
-                    setTimeout(() => { panzoom.reset(); }, 10);
+                    
+                    // 6. 強制歸零大法
+                    // 渲染完成後 50毫秒，強制命令 Panzoom 回到正中間
+                    // 這會消除任何「一打開就放大」的狀況
+                    setTimeout(() => { 
+                         panzoom.reset(); 
+                    }, 50);
 
                     if (pageNumPending !== null) {
                         renderPage(pageNumPending);
@@ -239,13 +232,11 @@
             queueRenderPage(pageNum);
         }
 
-        // 鍵盤支援 (電腦版 Chrome 必備)
         document.addEventListener('keydown', function(e) {
             if(e.key === "ArrowLeft") onPrevPage();
             if(e.key === "ArrowRight") onNextPage();
         });
 
-        // 觸控滑動支援 (手機/平板必備)
         let touchStartX = 0;
         let touchEndX = 0;
         
@@ -255,19 +246,17 @@
 
         stage.addEventListener('touchend', e => {
             touchEndX = e.changedTouches[0].screenX;
-            // 只有在未縮放時才允許翻頁
-            if (panzoom.getScale() < 1.05) {
+            // 允許一點點誤差 (Scale < 1.2) 
+            if (panzoom.getScale() < 1.2) {
                 if (touchEndX < touchStartX - 60) onNextPage();
                 if (touchEndX > touchStartX + 60) onPrevPage();
             }
         });
         
-        // 視窗大小改變 (旋轉螢幕) 重繪
         window.addEventListener('resize', function() {
-            clearTimeout(window.resizeTimer);
-            window.resizeTimer = setTimeout(function() {
-                renderPage(pageNum);
-            }, 100);
+            // 視窗改變時，只要重置 Panzoom 位置即可，不用重新渲染 Canvas
+            // 這樣效能會好非常多
+            panzoom.reset();
         });
     </script>
 </body>
